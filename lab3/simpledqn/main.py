@@ -13,6 +13,9 @@ The above copyright notice and this permission notice shall be included in all c
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+
+San Wong
+hswong1@uci.edu
 """
 
 
@@ -182,12 +185,12 @@ class DQN(object):
 
     def eps_greedy(self, obs, epsilon):
         # Check Q function, do argmax.
-        rnd = rng.rand()
-        if rnd > epsilon:
+        rnd = rng.rand() # Step 1: Generate a radom number
+        if rnd > epsilon: # If the random number generated above is greater than epsilon, we sample action space with a greedy approach
             obs = self._obs_preprocessor(obs)
             q_values = self._q.forward(obs)
             return F.argmax(q_values, axis=1).data[0]
-        else:
+        else: # else we sample the action space Randomly
             return rng.randint(0, self._act_dim)
 
     def compute_q_learning_loss(self, l_obs, l_act, l_rew, l_next_obs, l_done):
@@ -204,8 +207,67 @@ class DQN(object):
         # Hint: You may want to make use of the following fields: self._discount, self._q, self._qt
         # Hint2: Q-function can be called by self._q.forward(argument)
         # Hint3: You might also find https://docs.chainer.org/en/stable/reference/generated/chainer.functions.select_item.html useful
-        loss = C.Variable(np.array([0.]))  # TODO: replace this line
+
+        """
+        DQN
+        Loss = E_(s,a,s') [(y-Q(s,a;theta))^2]
+        To calculate loss, we need two things (1) Target value (2) current Q ValueError
+
+        Step 1:
+        Calculate the target value: target(s) <- or y_j according to the assignment
+        For Terminate state:
+        y_j = r_j
+
+        For non-Terminate state:
+        y_j = r_j + discount_rate * max over action: Q(next_state_action, next_state_thetaset)
+
+
+        Step 2:
+        Get current Q-Value:
+        Look up from the Q-value table
+        """
         "*** YOUR CODE HERE ***"
+
+
+
+        # Step 1:
+        # self._qt <= Update the target Q-value function by copying the current Q-value function weights
+        # find Q-value of next_state_action: Call the Q-function: => self._qt.forward(next_state)
+        y = l_rew + (1-l_done)*self._discount*F.max(self._qt.forward(l_next_obs),axis=1)
+
+        # Step 2: Get current Q-Value (Get Q-value with our current action: a)
+        q = F.select_item(self._q.forward(l_obs), l_act)
+        loss = F.mean_squared_error(y, q)
+
+
+        '''
+        [TEST DIDNT PASS]
+        #https://github.com/kkhetarpal/drlbootcamp/blob/master/lab3/simpledqn/main.py
+        anext = F.argmax(self._q.forward(l_next_obs), axis=1)
+        temp = F.select_item(self._qt.forward(l_next_obs), anext)
+        target = l_rew + self._discount * temp * (1 - l_done)
+        current = F.select_item(self._q.forward(l_obs), l_act)
+        loss = F.mean_squared_error(current,target)
+        '''
+        '''
+        # https://github.com/amalF/DeepRL-Bootcamp/blob/master/Lab3/simpledqn/main.py
+        obs_q_value = F.select_item(self._q.forward(l_obs),l_act)
+        print("l_done.shape[0]: ")
+        print(l_done.shape[0])
+        target_q_value=np.zeros(l_done.shape[0])
+        for i in range(l_done.shape[0]):
+            if l_done[i]==True:
+                target_q_value[i] = l_rew[i]
+            else:
+                target_value = self._qt.forward(F.expand_dims(l_next_obs[i],axis=0))
+                max_idx = F.argmax(target_value)
+                max_value = F.select_item(target_value,np.array([max_idx.data]))
+                target_q_value[i] = l_rew[i] + self._discount*max_value.data
+
+        loss = F.mean_squared_error(F.cast(target_q_value,np.float32),F.cast(obs_q_value,np.float32))
+        '''
+
+
         return loss
 
     def compute_double_q_learning_loss(self, l_obs, l_act, l_rew, l_next_obs, l_done):
@@ -222,8 +284,36 @@ class DQN(object):
         # Hint: You may want to make use of the following fields: self._discount, self._q, self._qt
         # Hint2: Q-function can be called by self._q.forward(argument)
         # Hint3: You might also find https://docs.chainer.org/en/stable/reference/generated/chainer.functions.select_item.html useful
-        loss = C.Variable(np.array([0.]))  # TODO: replace this line
+
+        """
+        Double DQN
+        Loss = E_(s,a,s') [(y-Q(s,a;theta))^2]
+
+        Step 1:
+        Calculate the target value: target(s) <- or y_j according to the assignment
+        For Terminate state:
+        y_j = r_j
+
+        For non-Terminate state:
+        y_j = r_j + discount_rate * argmax over action: Q(next_state_action, next_state_thetaset)
+
+
+        Step 2:
+        Get current Q-Value:
+        Look up from the Q-value table
+        """
         "*** YOUR CODE HERE ***"
+
+        # Step 1: Get the action that return the best target-Q-value
+        # Get argmax over calling the Q-function forward
+        target_action = F.argmax(self._q.forward(l_next_obs),axis=1)
+
+        # Step 2: Get the target-Q-value with the target-action
+        y = l_rew + (1-l_done)*self._discount*F.select_item(self._qt.forward(l_next_obs),target_action)
+
+        # Step 3: Get the Q-Value with current observation and current action
+        q = F.select_item(self._q.forward(l_obs),l_act)
+        loss = F.mean_squared_error(y, q)
         return loss
 
     def train_q(self, l_obs, l_act, l_rew, l_next_obs, l_done):
